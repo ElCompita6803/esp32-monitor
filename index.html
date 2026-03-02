@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset='utf-8'>
+  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <title>ESP32 DHT Monitor</title>
+  <style>
+    body{font-family:Arial;text-align:center;background:#0f172a;color:white;padding:10px;}
+    .card{background:#1e293b;padding:20px;margin:12px;border-radius:10px;display:inline-block;min-width:220px;}
+    table{margin:auto;border-collapse:collapse;width:90%;max-width:500px;}
+    td,th{border:1px solid #38bdf8;padding:6px 10px;}
+    .week-section{background:#1e293b;margin:12px auto;padding:15px;border-radius:10px;max-width:560px;}
+    .btn{background:#38bdf8;color:#0f172a;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:bold;text-decoration:none;display:inline-block;margin-top:8px;}
+    details summary{cursor:pointer;font-size:16px;padding:6px;}
+    .offline{color:#f87171;}
+    .status-ok{color:#4ade80;font-size:13px;}
+    .status-off{color:#f87171;font-size:13px;}
+  </style>
+</head>
+<body>
+
+<h1>ESP32 - Monitor DHT</h1>
+
+<div class='card'>
+  <h3>Fecha y hora</h3>
+  <p id='clock' style='font-size:20px;'>Cargando...</p>
+</div>
+
+<div class='card'>
+  <h3>Temperatura actual</h3>
+  <p id='temp' style='font-size:26px;'>--.- C</p>
+  <p id='temp-status' class='status-ok'>En linea</p>
+</div>
+
+<div class='card'>
+  <h3>Humedad actual</h3>
+  <p id='hum' style='font-size:26px;'>--.- %</p>
+</div>
+
+<div class='card'>
+  <h3>Ultima actualizacion</h3>
+  <p id='last-update' style='font-size:14px;color:#94a3b8;'>--</p>
+</div>
+
+<div class='week-section'>
+  <h3>Promedios por hora (ultimas 6)</h3>
+  <div id='hour-table'><p>Cargando...</p></div>
+</div>
+
+<div class='week-section'>
+  <h3 id='week-title'>Semana actual</h3>
+  <div id='week-table'><p>Cargando...</p></div>
+</div>
+
+<div id='history-section'></div>
+
+<div class='card' style='margin-top:30px;max-width:400px;display:block;margin-left:auto;margin-right:auto;'>
+  <h3>Equipo:</h3>
+  <p>Angel Lugo</p>
+  <p>Sebastian Lizalde</p>
+  <p>Oskar Garcia</p>
+</div>
+
+<script>
+  const DATA_URL = 'https://raw.githubusercontent.com/TU_USUARIO/esp32-monitor/main/data.json';
+
+  let lastData = null;
+
+  function buildWeekTable(days, data) {
+    let html = "<table><tr><th>Dia</th><th>Temp C</th><th>Hum %</th></tr>";
+    for (let i = 0; i < 7; i++) {
+      html += "<tr><td>" + days[i] + "</td>";
+      if (data.offline[i]) {
+        html += "<td colspan='2' style='color:#f87171;'>Fuera de servicio</td>";
+      } else if (data.count[i] > 0) {
+        html += "<td>" + (data.temp[i] / data.count[i]).toFixed(1) + "</td>";
+        html += "<td>" + (data.hum[i]  / data.count[i]).toFixed(1) + "</td>";
+      } else {
+        html += "<td>-</td><td>-</td>";
+      }
+      html += "</tr>";
+    }
+    html += "</table>";
+    return html;
+  }
+
+  async function loadData() {
+    const days = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
+    try {
+      const res = await fetch(DATA_URL + '?t=' + Date.now());
+      const data = await res.json();
+      lastData = data;
+
+      // Temperatura y humedad
+      document.getElementById('temp').innerText = data.temp + " C";
+      document.getElementById('hum').innerText  = data.hum  + " %";
+      document.getElementById('last-update').innerText = "Actualizado: " + data.lastUpdate;
+
+      // Estado en linea / fuera de linea
+      const diffSec = (Date.now() / 1000) - data.epochLastSeen;
+      const statusEl = document.getElementById('temp-status');
+      if (diffSec < 120) {
+        statusEl.innerText = "🟢 En linea";
+        statusEl.className = 'status-ok';
+      } else {
+        statusEl.innerText = "🔴 Fuera de linea";
+        statusEl.className = 'status-off';
+      }
+
+      // Promedios por hora
+      let hourHtml = "";
+      if (data.hourHistory && data.hourHistory.length > 0) {
+        hourHtml = "<table><tr><th>Hora</th><th>Temp C</th><th>Hum %</th></tr>";
+        for (let i = data.hourHistory.length - 1; i >= 0; i--) {
+          hourHtml += "<tr><td>" + data.hourHistory[i].time + "</td>";
+          hourHtml += "<td>" + data.hourHistory[i].temp.toFixed(1) + "</td>";
+          hourHtml += "<td>" + data.hourHistory[i].hum.toFixed(1)  + "</td></tr>";
+        }
+        hourHtml += "</table>";
+      } else {
+        hourHtml = "<p>Calculandose...</p>";
+      }
+      document.getElementById('hour-table').innerHTML = hourHtml;
+
+      // Semana actual
+      document.getElementById('week-title').innerText = "Semana actual (" + data.weekLabel + ")";
+      document.getElementById('week-table').innerHTML = buildWeekTable(days, data.currentWeek);
+
+      // Semanas anteriores
+      let histHtml = "";
+      if (data.weekHistory && data.weekHistory.length > 0) {
+        histHtml = "<h3>Semanas anteriores</h3>";
+        for (let w = data.weekHistory.length - 1; w >= 0; w--) {
+          const rec = data.weekHistory[w];
+          histHtml += "<div class='week-section'><details>";
+          histHtml += "<summary>Semana del " + rec.label + "</summary>";
+          histHtml += buildWeekTable(days, rec);
+          histHtml += "</details></div>";
+        }
+      }
+      document.getElementById('history-section').innerHTML = histHtml;
+
+    } catch(e) {
+      console.log("Error cargando datos:", e);
+      if (!lastData) {
+        document.getElementById('temp-status').innerText = "🔴 Sin datos";
+        document.getElementById('temp-status').className = 'status-off';
+      }
+    }
+  }
+
+  // Reloj local
+  function updateClock() {
+    const now = new Date();
+    const days = ["Domingo","Lunes","Martes","Miercoles","Jueves","Viernes","Sabado"];
+    const day = days[now.getDay()];
+    const date = now.toLocaleDateString('es-MX');
+    const time = now.toLocaleTimeString('es-MX');
+    document.getElementById('clock').innerText = day + " " + date + " " + time;
+  }
+
+  setInterval(updateClock, 1000);
+  setInterval(loadData, 30000);
+  updateClock();
+  loadData();
+</script>
+
+</body>
+</html>
+```
+
+const DATA_URL = 'https://raw.githubusercontent.com/ElCompita6803/esp32-monitor/main/data.json';
