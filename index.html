@@ -207,7 +207,7 @@
       checkAlertBanner(data);
 
       // Estado en linea / fuera de linea
-      const diffSec  = (Date.now() / 1000) - data.epochLastSeen;
+      const diffSec = Math.abs((Date.now() / 1000) - data.epochLastSeen);
       const statusEl = document.getElementById('status');
       if (diffSec < 120) {
         statusEl.innerText = "🟢 En linea";
