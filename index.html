@@ -21,6 +21,8 @@
 </head>
 <body>
 
+<div id='alert-banner' style='display:none;padding:15px;font-size:18px;font-weight:bold;position:sticky;top:0;z-index:999;'></div>
+
 <h1>ESP32 - Monitor DHT</h1>
 
 <div class='card'>
@@ -72,7 +74,7 @@
 <div class='week-section'>
   <h3 id='week-title'>Semana actual</h3>
   <div id='week-table'><p>Cargando...</p></div>
-  <a class='btn' id='csv-btn' href='#'>Descargar CSV</a>
+  <button class='btn' id='csv-btn'>Descargar CSV</button>
 </div>
 
 <div id='history-section'></div>
@@ -92,6 +94,24 @@
   let chartHumHora  = null;
   let chartTempDia  = null;
   let chartHumDia   = null;
+
+  function checkAlertBanner(data) {
+    const banner = document.getElementById('alert-banner');
+    if (data.alertHigh) {
+      banner.style.display    = 'block';
+      banner.style.background = '#dc2626';
+      banner.style.color      = 'white';
+      banner.innerText        = '🔴 ALERTA: Temperatura alta ' + data.temp + ' °C — Posible calentamiento';
+    } else if (data.alertLow) {
+      banner.style.display    = 'block';
+      banner.style.background = '#1d4ed8';
+      banner.style.color      = 'white';
+      banner.innerText        = '🔵 ALERTA: Temperatura baja ' + data.temp + ' °C';
+    } else {
+      banner.style.display = 'none';
+      banner.innerText     = '';
+    }
+  }
 
   function buildWeekTable(data) {
     let html = "<table><tr><th>Dia</th><th>Temp C</th><th>Hum %</th></tr>";
@@ -129,7 +149,7 @@
   }
 
   function updateCharts(hoursLabels, hoursTemp, hoursHum, daysTemp, daysHum) {
-    const chartOptions = (color) => ({
+    const chartOptions = () => ({
       responsive: true,
       plugins: { legend: { labels: { color: 'white' } } },
       scales: {
@@ -144,7 +164,7 @@
       data: { labels: hoursLabels, datasets: [{ label: 'Temperatura C', data: hoursTemp,
         borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.2)',
         tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#f87171' }] },
-      options: chartOptions('#f87171')
+      options: chartOptions()
     });
 
     if (chartHumHora) chartHumHora.destroy();
@@ -153,7 +173,7 @@
       data: { labels: hoursLabels, datasets: [{ label: 'Humedad %', data: hoursHum,
         borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.2)',
         tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#38bdf8' }] },
-      options: chartOptions('#38bdf8')
+      options: chartOptions()
     });
 
     if (chartTempDia) chartTempDia.destroy();
@@ -161,7 +181,7 @@
       type: 'bar',
       data: { labels: days, datasets: [{ label: 'Temperatura C', data: daysTemp,
         backgroundColor: 'rgba(248,113,113,0.7)', borderColor: '#f87171', borderWidth: 2 }] },
-      options: chartOptions('#f87171')
+      options: chartOptions()
     });
 
     if (chartHumDia) chartHumDia.destroy();
@@ -169,7 +189,7 @@
       type: 'bar',
       data: { labels: days, datasets: [{ label: 'Humedad %', data: daysHum,
         backgroundColor: 'rgba(56,189,248,0.7)', borderColor: '#38bdf8', borderWidth: 2 }] },
-      options: chartOptions('#38bdf8')
+      options: chartOptions()
     });
   }
 
@@ -183,15 +203,18 @@
       document.getElementById('hum').innerText         = data.hum  + " %";
       document.getElementById('last-update').innerText = "Actualizado: " + data.lastUpdate;
 
+      // Alerta de temperatura
+      checkAlertBanner(data);
+
       // Estado en linea / fuera de linea
       const diffSec  = (Date.now() / 1000) - data.epochLastSeen;
       const statusEl = document.getElementById('status');
       if (diffSec < 120) {
-        statusEl.innerText   = "🟢 En linea";
-        statusEl.className   = 'status-ok';
+        statusEl.innerText = "🟢 En linea";
+        statusEl.className = 'status-ok';
       } else {
-        statusEl.innerText   = "🔴 Fuera de linea";
-        statusEl.className   = 'status-off';
+        statusEl.innerText = "🔴 Fuera de linea";
+        statusEl.className = 'status-off';
       }
 
       // Graficas por hora
@@ -239,8 +262,6 @@
         }
       }
       document.getElementById('history-section').innerHTML = histHtml;
-
-      // Guardar historial para CSV
       window._weekHistory = data.weekHistory;
 
     } catch(e) {
@@ -256,7 +277,6 @@
     }
   }
 
-  // Reloj local
   function updateClock() {
     const now  = new Date();
     const dias = ["Domingo","Lunes","Martes","Miercoles","Jueves","Viernes","Sabado"];
@@ -264,7 +284,7 @@
   }
 
   setInterval(updateClock, 1000);
-  setInterval(loadData, 30000);
+  setInterval(loadData,    30000);
   updateClock();
   loadData();
 </script>
