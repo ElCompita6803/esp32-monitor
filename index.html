@@ -1,293 +1,944 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-  <meta charset='utf-8'>
-  <meta name='viewport' content='width=device-width, initial-scale=1'>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ESP32 DHT Monitor</title>
-  <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
   <style>
-    body{font-family:Arial;text-align:center;background:#0f172a;color:white;padding:10px;}
-    .card{background:#1e293b;padding:20px;margin:12px;border-radius:10px;display:inline-block;min-width:220px;}
-    table{margin:auto;border-collapse:collapse;width:90%;max-width:500px;}
-    td,th{border:1px solid #38bdf8;padding:6px 10px;}
-    .week-section{background:#1e293b;margin:12px auto;padding:15px;border-radius:10px;max-width:560px;}
-    .chart-section{background:#1e293b;margin:12px auto;padding:15px;border-radius:10px;max-width:700px;}
-    .btn{background:#38bdf8;color:#0f172a;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:bold;text-decoration:none;display:inline-block;margin-top:8px;}
-    details summary{cursor:pointer;font-size:16px;padding:6px;}
-    canvas{max-width:100%;margin-top:10px;}
-    .status-ok{color:#4ade80;font-size:13px;}
-    .status-off{color:#f87171;font-size:13px;}
+    :root {
+      --day-sky1: #0ea5e9;
+      --day-sky2: #38bdf8;
+      --day-ground: #166534;
+      --day-ground2: #15803d;
+      --day-accent: #22d3ee;
+      --day-card: rgba(255,255,255,0.12);
+      --day-border: rgba(34,211,238,0.4);
+      --day-text: #f0fdf4;
+      --day-glow: rgba(34,211,238,0.6);
+
+      --night-sky1: #0f172a;
+      --night-sky2: #1e1b4b;
+      --night-ground: #052e16;
+      --night-ground2: #14532d;
+      --night-accent: #4ade80;
+      --night-card: rgba(0,20,10,0.55);
+      --night-border: rgba(74,222,128,0.35);
+      --night-text: #dcfce7;
+      --night-glow: rgba(74,222,128,0.5);
+
+      --transition: 3s ease;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Exo 2', sans-serif;
+      min-height: 100vh;
+      color: var(--day-text);
+      transition: background var(--transition), color var(--transition);
+      overflow-x: hidden;
+    }
+
+    /* ---- SKY BACKGROUND ---- */
+    #sky {
+      position: fixed;
+      inset: 0;
+      z-index: -3;
+      background: linear-gradient(180deg, var(--day-sky1) 0%, var(--day-sky2) 60%, var(--day-ground) 85%, var(--day-ground2) 100%);
+      transition: background var(--transition);
+    }
+
+    /* ---- STARS ---- */
+    #stars {
+      position: fixed;
+      inset: 0;
+      z-index: -2;
+      opacity: 0;
+      transition: opacity 3s ease;
+      pointer-events: none;
+    }
+    .star {
+      position: absolute;
+      border-radius: 50%;
+      background: white;
+      animation: twinkle 2s infinite alternate;
+    }
+    @keyframes twinkle {
+      from { opacity: 0.3; transform: scale(1); }
+      to   { opacity: 1;   transform: scale(1.4); }
+    }
+
+    /* ---- SUN / MOON ---- */
+    #celestial {
+      position: fixed;
+      top: 60px;
+      right: 80px;
+      width: 70px;
+      height: 70px;
+      border-radius: 50%;
+      background: radial-gradient(circle, #fde68a, #f59e0b);
+      box-shadow: 0 0 40px 15px rgba(251,191,36,0.5);
+      z-index: -1;
+      transition: background 3s ease, box-shadow 3s ease, transform 3s ease;
+    }
+
+    /* ---- CIRCUIT GRID ---- */
+    #circuit {
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      opacity: 0.07;
+      pointer-events: none;
+      background-image:
+        linear-gradient(rgba(34,211,238,0.8) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(34,211,238,0.8) 1px, transparent 1px);
+      background-size: 60px 60px;
+      transition: opacity 3s ease;
+    }
+
+    /* ---- FLOATING PARTICLES ---- */
+    .particle {
+      position: fixed;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: floatUp linear infinite;
+      z-index: -1;
+    }
+    @keyframes floatUp {
+      0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+      10%  { opacity: 0.6; }
+      90%  { opacity: 0.3; }
+      100% { transform: translateY(-20vh) scale(1); opacity: 0; }
+    }
+
+    /* ---- LANDSCAPE SVG ---- */
+    #landscape {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      z-index: -1;
+      pointer-events: none;
+      transition: opacity 3s ease;
+    }
+
+    /* ---- MAIN CONTENT ---- */
+    #app {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 20px 16px 60px;
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ---- HEADER ---- */
+    header {
+      text-align: center;
+      padding: 30px 0 20px;
+    }
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: rgba(0,0,0,0.25);
+      border: 1px solid var(--day-border);
+      border-radius: 50px;
+      padding: 6px 18px;
+      margin-bottom: 14px;
+      backdrop-filter: blur(10px);
+      font-size: 12px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--day-accent);
+      transition: border-color var(--transition), color var(--transition);
+    }
+    .logo-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--day-accent);
+      animation: pulse 2s infinite;
+      transition: background var(--transition);
+    }
+    @keyframes pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(34,211,238,0.6); }
+      50%       { box-shadow: 0 0 0 8px rgba(34,211,238,0); }
+    }
+
+    h1 {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(1.6rem, 5vw, 2.8rem);
+      font-weight: 900;
+      letter-spacing: 4px;
+      text-shadow: 0 0 30px var(--day-glow), 0 2px 4px rgba(0,0,0,0.5);
+      transition: text-shadow var(--transition);
+      line-height: 1.2;
+    }
+    h1 span { color: var(--day-accent); transition: color var(--transition); }
+
+    .subtitle {
+      font-size: 13px;
+      letter-spacing: 2px;
+      opacity: 0.7;
+      margin-top: 8px;
+    }
+
+    /* ---- ALERT BANNER ---- */
+    #alert-banner {
+      display: none;
+      padding: 14px 20px;
+      border-radius: 12px;
+      margin-bottom: 20px;
+      font-family: 'Orbitron', monospace;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-align: center;
+      animation: alertPulse 1.5s infinite;
+      border: 2px solid;
+    }
+    @keyframes alertPulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.7; }
+    }
+
+    /* ---- CARDS GRID ---- */
+    .cards-top {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: var(--day-card);
+      border: 1px solid var(--day-border);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      transition: background var(--transition), border-color var(--transition), transform 0.2s, box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+    .card::before {
+      content: '';
+      position: absolute;
+      top: -1px; left: -1px; right: -1px;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--day-accent), transparent);
+      transition: background var(--transition);
+    }
+    .card:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3), 0 0 20px var(--day-glow);
+    }
+
+    .card-icon {
+      font-size: 28px;
+      margin-bottom: 8px;
+      display: block;
+    }
+    .card-label {
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      opacity: 0.6;
+      margin-bottom: 6px;
+      font-family: 'Orbitron', monospace;
+    }
+    .card-value {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(1.6rem, 4vw, 2.2rem);
+      font-weight: 700;
+      color: var(--day-accent);
+      text-shadow: 0 0 20px var(--day-glow);
+      transition: color var(--transition), text-shadow var(--transition);
+      line-height: 1.1;
+    }
+    .card-sub {
+      font-size: 12px;
+      opacity: 0.6;
+      margin-top: 4px;
+    }
+
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-top: 8px;
+      font-weight: 600;
+    }
+    .status-online  { background: rgba(74,222,128,0.2); color: #4ade80; border: 1px solid rgba(74,222,128,0.4); }
+    .status-offline { background: rgba(248,113,113,0.2); color: #f87171; border: 1px solid rgba(248,113,113,0.4); }
+    .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+
+    /* ---- SECTION TITLES ---- */
+    .section-title {
+      font-family: 'Orbitron', monospace;
+      font-size: 13px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--day-accent);
+      margin: 28px 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      transition: color var(--transition);
+    }
+    .section-title::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(90deg, var(--day-border), transparent);
+      transition: background var(--transition);
+    }
+
+    /* ---- CHARTS ---- */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .chart-card {
+      background: var(--day-card);
+      border: 1px solid var(--day-border);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .chart-card h3 {
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin-bottom: 14px;
+    }
+    canvas { max-width: 100%; }
+
+    /* ---- TABLES ---- */
+    .table-card {
+      background: var(--day-card);
+      border: 1px solid var(--day-border);
+      border-radius: 16px;
+      padding: 20px;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      margin-bottom: 16px;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .table-card h3 {
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      opacity: 0.7;
+      margin-bottom: 14px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th {
+      font-family: 'Orbitron', monospace;
+      font-size: 10px;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--day-border);
+      color: var(--day-accent);
+      transition: border-color var(--transition), color var(--transition);
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      font-size: 14px;
+    }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.04); }
+
+    .offline-text { color: #f87171; font-size: 13px; }
+
+    /* ---- BTN ---- */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: linear-gradient(135deg, var(--day-accent), #059669);
+      color: #0f172a;
+      border: none;
+      padding: 9px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      text-decoration: none;
+      margin-top: 12px;
+      transition: transform 0.2s, box-shadow 0.2s, background var(--transition);
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+    }
+
+    /* ---- WEEK HISTORY ---- */
+    details {
+      margin-bottom: 10px;
+    }
+    summary {
+      cursor: pointer;
+      font-family: 'Orbitron', monospace;
+      font-size: 12px;
+      letter-spacing: 1px;
+      padding: 12px 16px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 10px;
+      border: 1px solid var(--day-border);
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      transition: background 0.2s, border-color var(--transition);
+    }
+    summary:hover { background: rgba(255,255,255,0.1); }
+    summary::before { content: '▶'; font-size: 10px; transition: transform 0.2s; }
+    details[open] summary::before { transform: rotate(90deg); }
+
+    /* ---- TEAM CARD ---- */
+    .team-card {
+      background: var(--day-card);
+      border: 1px solid var(--day-border);
+      border-radius: 16px;
+      padding: 24px;
+      backdrop-filter: blur(14px);
+      text-align: center;
+      margin-top: 20px;
+      transition: background var(--transition), border-color var(--transition);
+    }
+    .team-card h3 {
+      font-family: 'Orbitron', monospace;
+      font-size: 11px;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: var(--day-accent);
+      margin-bottom: 16px;
+      transition: color var(--transition);
+    }
+    .team-members {
+      display: flex;
+      justify-content: center;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+    .member {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+    }
+    .member-avatar {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--day-accent), #059669);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Orbitron', monospace;
+      font-weight: 700;
+      font-size: 16px;
+      color: #0f172a;
+      transition: background var(--transition);
+    }
+    .member-name {
+      font-size: 12px;
+      opacity: 0.8;
+    }
+
+    /* ---- CLOCK DISPLAY ---- */
+    #clock {
+      font-family: 'Orbitron', monospace;
+      font-size: clamp(0.9rem, 2.5vw, 1.1rem);
+      font-weight: 400;
+      letter-spacing: 2px;
+    }
+
+    /* ---- NIGHT MODE ---- */
+    body.night #sky {
+      background: linear-gradient(180deg, var(--night-sky1) 0%, var(--night-sky2) 55%, var(--night-ground) 82%, var(--night-ground2) 100%);
+    }
+    body.night { color: var(--night-text); }
+    body.night .card,
+    body.night .chart-card,
+    body.night .table-card,
+    body.night .team-card { background: var(--night-card); border-color: var(--night-border); }
+    body.night .card::before { background: linear-gradient(90deg, transparent, var(--night-accent), transparent); }
+    body.night .card:hover { box-shadow: 0 12px 40px rgba(0,0,0,0.5), 0 0 20px var(--night-glow); }
+    body.night .card-value { color: var(--night-accent); text-shadow: 0 0 20px var(--night-glow); }
+    body.night .section-title { color: var(--night-accent); }
+    body.night .section-title::after { background: linear-gradient(90deg, var(--night-border), transparent); }
+    body.night th { color: var(--night-accent); border-color: var(--night-border); }
+    body.night .logo-badge { color: var(--night-accent); border-color: var(--night-border); }
+    body.night .logo-dot { background: var(--night-accent); }
+    body.night h1 { text-shadow: 0 0 30px var(--night-glow), 0 2px 4px rgba(0,0,0,0.8); }
+    body.night h1 span { color: var(--night-accent); }
+    body.night .btn { background: linear-gradient(135deg, var(--night-accent), #15803d); }
+    body.night summary { border-color: var(--night-border); }
+    body.night #circuit { opacity: 0.12; background-image: linear-gradient(rgba(74,222,128,0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(74,222,128,0.8) 1px, transparent 1px); }
+    body.night #celestial {
+      background: radial-gradient(circle at 35% 35%, #f8fafc, #cbd5e1);
+      box-shadow: 0 0 30px 8px rgba(200,220,255,0.3);
+    }
+    body.night #stars { opacity: 1; }
+    body.night .team-card h3 { color: var(--night-accent); }
+    body.night .member-avatar { background: linear-gradient(135deg, var(--night-accent), #15803d); }
+
+    /* ---- DAWN / DUSK ---- */
+    body.dawn #sky {
+      background: linear-gradient(180deg, #f97316 0%, #fb923c 30%, #fde68a 55%, #166534 82%, #15803d 100%);
+    }
+    body.dusk #sky {
+      background: linear-gradient(180deg, #1e1b4b 0%, #7c3aed 25%, #f97316 55%, #052e16 82%, #14532d 100%);
+    }
+    body.dawn #celestial, body.dusk #celestial {
+      background: radial-gradient(circle, #fde68a, #f97316);
+      box-shadow: 0 0 60px 20px rgba(249,115,22,0.5);
+      top: 120px;
+    }
+
+    /* ---- RESPONSIVE ---- */
+    @media (max-width: 600px) {
+      .cards-top { grid-template-columns: 1fr 1fr; }
+      .chart-grid { grid-template-columns: 1fr; }
+      .team-members { gap: 12px; }
+    }
   </style>
 </head>
 <body>
 
-<div id='alert-banner' style='display:none;padding:15px;font-size:18px;font-weight:bold;position:sticky;top:0;z-index:999;'></div>
+<!-- Background layers -->
+<div id="sky"></div>
+<div id="stars"></div>
+<div id="circuit"></div>
+<div id="celestial"></div>
 
-<h1>ESP32 - Monitor DHT</h1>
+<!-- Landscape SVG -->
+<svg id="landscape" viewBox="0 0 1440 160" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Hills -->
+  <path d="M0,100 C200,40 400,120 600,80 C800,40 1000,110 1200,70 C1350,45 1420,90 1440,80 L1440,160 L0,160 Z" fill="rgba(0,60,20,0.6)"/>
+  <!-- Trees -->
+  <rect x="60" y="75" width="8" height="30" fill="rgba(0,40,10,0.7)"/>
+  <polygon points="64,45 44,85 84,85" fill="rgba(21,128,61,0.8)"/>
+  <polygon points="64,35 48,68 80,68" fill="rgba(22,101,52,0.9)"/>
+  <rect x="160" y="80" width="6" height="25" fill="rgba(0,40,10,0.7)"/>
+  <polygon points="163,55 147,88 179,88" fill="rgba(21,128,61,0.8)"/>
+  <rect x="1300" y="70" width="8" height="35" fill="rgba(0,40,10,0.7)"/>
+  <polygon points="1304,40 1284,78 1324,78" fill="rgba(21,128,61,0.8)"/>
+  <polygon points="1304,28 1288,62 1320,62" fill="rgba(22,101,52,0.9)"/>
+  <rect x="1380" y="78" width="6" height="26" fill="rgba(0,40,10,0.7)"/>
+  <polygon points="1383,55 1367,86 1399,86" fill="rgba(21,128,61,0.8)"/>
+  <!-- Circuit lines on ground -->
+  <line x1="300" y1="140" x2="500" y2="140" stroke="rgba(34,211,238,0.3)" stroke-width="1.5"/>
+  <line x1="500" y1="140" x2="500" y2="125" stroke="rgba(34,211,238,0.3)" stroke-width="1.5"/>
+  <circle cx="500" cy="125" r="3" fill="rgba(34,211,238,0.5)"/>
+  <line x1="700" y1="150" x2="900" y2="150" stroke="rgba(34,211,238,0.3)" stroke-width="1.5"/>
+  <circle cx="700" cy="150" r="3" fill="rgba(34,211,238,0.5)"/>
+  <circle cx="900" cy="150" r="3" fill="rgba(34,211,238,0.5)"/>
+</svg>
 
-<div class='card'>
-  <h3>Fecha y hora</h3>
-  <p id='clock' style='font-size:20px;'>Cargando...</p>
-</div>
+<!-- Particles container -->
+<div id="particles"></div>
 
-<div class='card'>
-  <h3>Temperatura actual</h3>
-  <p id='temp' style='font-size:26px;'>--.- C</p>
-  <p id='status' class='status-ok'>Cargando...</p>
-</div>
+<div id="app">
+  <!-- Header -->
+  <header>
+    <h1>ESP32 <span>DHT</span> Monitor</h1>
+    <p class="subtitle">REAL-TIME ENVIRONMENTAL MONITORING SYSTEM</p>
+  </header>
 
-<div class='card'>
-  <h3>Humedad actual</h3>
-  <p id='hum' style='font-size:26px;'>--.- %</p>
-</div>
+  <!-- Alert Banner -->
+  <div id="alert-banner"></div>
 
-<div class='card'>
-  <h3>Ultima actualizacion</h3>
-  <p id='last-update' style='font-size:14px;color:#94a3b8;'>--</p>
-</div>
+  <!-- Top Cards -->
+  <div class="cards-top">
+    <div class="card">
+      <span class="card-icon">🕐</span>
+      <div class="card-label">Date & Time</div>
+      <div id="clock">Loading...</div>
+    </div>
 
-<div class='chart-section'>
-  <h3>Temperatura por hora (ultimas 6)</h3>
-  <canvas id='chartTempHora'></canvas>
-</div>
+    <div class="card">
+      <span class="card-icon">🌡️</span>
+      <div class="card-label">Temperature</div>
+      <div class="card-value" id="temp">--.-°C</div>
+      <div id="status-badge" class="status-badge status-offline">
+        <div class="status-dot"></div>
+        <span id="status-text">No data</span>
+      </div>
+    </div>
 
-<div class='chart-section'>
-  <h3>Humedad por hora (ultimas 6)</h3>
-  <canvas id='chartHumHora'></canvas>
-</div>
+    <div class="card">
+      <span class="card-icon">💧</span>
+      <div class="card-label">Humidity</div>
+      <div class="card-value" id="hum">--.-%</div>
+    </div>
 
-<div class='chart-section'>
-  <h3>Temperatura por dia (semana actual)</h3>
-  <canvas id='chartTempDia'></canvas>
-</div>
+    <div class="card">
+      <span class="card-icon">📡</span>
+      <div class="card-label">Last Update</div>
+      <div class="card-sub" id="last-update" style="font-size:13px;margin-top:8px;opacity:0.8;">--</div>
+    </div>
+  </div>
 
-<div class='chart-section'>
-  <h3>Humedad por dia (semana actual)</h3>
-  <canvas id='chartHumDia'></canvas>
-</div>
+  <!-- Charts by Hour -->
+  <div class="section-title">📈 Hourly Charts</div>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>🌡️ Temperature · Last 6h</h3>
+      <canvas id="chartTempHora"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>💧 Humidity · Last 6h</h3>
+      <canvas id="chartHumHora"></canvas>
+    </div>
+  </div>
 
-<div class='week-section'>
-  <h3>Promedios por hora (ultimas 6)</h3>
-  <div id='hour-table'><p>Cargando...</p></div>
-</div>
+  <!-- Charts by Day -->
+  <div class="section-title">📊 Weekly Charts</div>
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>🌡️ Temperature · Current Week</h3>
+      <canvas id="chartTempDia"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3>💧 Humidity · Current Week</h3>
+      <canvas id="chartHumDia"></canvas>
+    </div>
+  </div>
 
-<div class='week-section'>
-  <h3 id='week-title'>Semana actual</h3>
-  <div id='week-table'><p>Cargando...</p></div>
-  <button class='btn' id='csv-btn'>Descargar CSV</button>
-</div>
+  <!-- Hour Table -->
+  <div class="section-title">🕐 Hourly Averages</div>
+  <div class="table-card">
+    <h3>Last 6 recorded hours</h3>
+    <div id="hour-table"><p style="opacity:0.5;font-size:13px;">Calculating...</p></div>
+  </div>
 
-<div id='history-section'></div>
+  <!-- Week Table -->
+  <div class="section-title">📅 Current Week</div>
+  <div class="table-card">
+    <h3 id="week-title">Current week</h3>
+    <div id="week-table"><p style="opacity:0.5;font-size:13px;">Loading...</p></div>
+    <button class="btn" id="csv-btn">⬇ Download CSV</button>
+  </div>
 
-<div class='card' style='margin-top:30px;max-width:400px;display:block;margin-left:auto;margin-right:auto;'>
-  <h3>Equipo:</h3>
-  <p>Angel Lugo</p>
-  <p>Sebastian Lizalde</p>
-  <p>Oskar Garcia</p>
+  <!-- History -->
+  <div id="history-section"></div>
+
+  <!-- Team -->
+  <div class="team-card">
+    <h3>⚙️ Development Team</h3>
+    <div class="team-members">
+      <div class="member">
+        <div class="member-avatar">AL</div>
+        <div class="member-name">Angel Lugo</div>
+      </div>
+      <div class="member">
+        <div class="member-avatar">SL</div>
+        <div class="member-name">Sebastian Lizalde</div>
+      </div>
+      <div class="member">
+        <div class="member-avatar">OG</div>
+        <div class="member-name">Oskar Garcia</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
   const DATA_URL = 'https://raw.githubusercontent.com/ElCompita6803/esp32-monitor/main/data.json';
-  const days = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
+  const days = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
 
-  let chartTempHora = null;
-  let chartHumHora  = null;
-  let chartTempDia  = null;
-  let chartHumDia   = null;
+  let chartTempHora = null, chartHumHora = null, chartTempDia = null, chartHumDia = null;
 
+  // ---- DAY/NIGHT TRANSITION ----
+  function updateDayNight() {
+    const h = new Date().getHours();
+    const body = document.body;
+    body.classList.remove('night','dawn','dusk');
+    const cel = document.getElementById('celestial');
+
+    if (h >= 6 && h < 8) {
+      body.classList.add('dawn');
+      cel.style.top = '120px'; cel.style.right = '100px';
+    } else if (h >= 8 && h < 18) {
+      // Day - sun position changes with hour
+      const progress = (h - 8) / 10;
+      const topPos = 60 + Math.sin(progress * Math.PI) * -40;
+      cel.style.top = topPos + 'px';
+      cel.style.right = (50 + progress * 60) + 'px';
+    } else if (h >= 18 && h < 20) {
+      body.classList.add('dusk');
+      cel.style.top = '130px'; cel.style.right = '120px';
+    } else {
+      body.classList.add('night');
+      cel.style.top = '80px'; cel.style.right = '100px';
+    }
+  }
+
+  // ---- STARS ----
+  function createStars() {
+    const container = document.getElementById('stars');
+    for (let i = 0; i < 120; i++) {
+      const star = document.createElement('div');
+      star.className = 'star';
+      const size = Math.random() * 3 + 1;
+      star.style.cssText = `
+        width:${size}px; height:${size}px;
+        top:${Math.random()*60}%;
+        left:${Math.random()*100}%;
+        animation-delay:${Math.random()*3}s;
+        animation-duration:${1.5 + Math.random()*2}s;
+      `;
+      container.appendChild(star);
+    }
+  }
+
+  // ---- PARTICLES ----
+  function createParticles() {
+    const container = document.getElementById('particles');
+    for (let i = 0; i < 12; i++) {
+      const p = document.createElement('div');
+      p.className = 'particle';
+      const size = Math.random() * 5 + 2;
+      const isNight = document.body.classList.contains('night');
+      const color = isNight ? 'rgba(74,222,128,' : 'rgba(34,211,238,';
+      p.style.cssText = `
+        width:${size}px; height:${size}px;
+        left:${Math.random()*100}%;
+        background:${color}0.6)};
+        box-shadow: 0 0 ${size*2}px ${color}0.4)};
+        animation-duration:${8 + Math.random()*12}s;
+        animation-delay:${Math.random()*8}s;
+      `;
+      container.appendChild(p);
+    }
+  }
+
+  // ---- ALERT ----
   function checkAlertBanner(data) {
     const banner = document.getElementById('alert-banner');
     if (data.alertHigh) {
-      banner.style.display    = 'block';
-      banner.style.background = '#dc2626';
-      banner.style.color      = 'white';
-      banner.innerText        = '🔴 ALERTA: Temperatura alta ' + data.temp + ' °C — Posible calentamiento';
+      banner.style.display = 'block';
+      banner.style.background = 'rgba(220,38,38,0.2)';
+      banner.style.borderColor = '#dc2626';
+      banner.style.color = '#fca5a5';
+      banner.innerText = '🔴 CRITICAL ALERT · High temperature ' + data.temp + '°C — Possible overheating detected';
     } else if (data.alertLow) {
-      banner.style.display    = 'block';
-      banner.style.background = '#1d4ed8';
-      banner.style.color      = 'white';
-      banner.innerText        = '🔵 ALERTA: Temperatura baja ' + data.temp + ' °C';
+      banner.style.display = 'block';
+      banner.style.background = 'rgba(29,78,216,0.2)';
+      banner.style.borderColor = '#3b82f6';
+      banner.style.color = '#93c5fd';
+      banner.innerText = '🔵 ALERT · Low temperature ' + data.temp + '°C — Below minimum threshold';
     } else {
       banner.style.display = 'none';
-      banner.innerText     = '';
     }
   }
 
+  // ---- WEEK TABLE ----
   function buildWeekTable(data) {
-    let html = "<table><tr><th>Dia</th><th>Temp C</th><th>Hum %</th></tr>";
+    let html = '<table><tr><th>Day</th><th>Temp °C</th><th>Hum %</th></tr>';
     for (let i = 0; i < 7; i++) {
-      html += "<tr><td>" + days[i] + "</td>";
+      html += '<tr><td>' + days[i] + '</td>';
       if (data.offline[i]) {
-        html += "<td colspan='2' style='color:#f87171;'>Fuera de servicio</td>";
+        html += '<td colspan="2" class="offline-text">⚠ Fuera de servicio</td>';
       } else if (data.count[i] > 0) {
-        html += "<td>" + (data.temp[i] / data.count[i]).toFixed(1) + "</td>";
-        html += "<td>" + (data.hum[i]  / data.count[i]).toFixed(1) + "</td>";
+        html += '<td>' + (data.temp[i]/data.count[i]).toFixed(1) + '</td>';
+        html += '<td>' + (data.hum[i]/data.count[i]).toFixed(1) + '</td>';
       } else {
-        html += "<td>-</td><td>-</td>";
+        html += '<td style="opacity:0.4">—</td><td style="opacity:0.4">—</td>';
       }
-      html += "</tr>";
+      html += '</tr>';
     }
-    html += "</table>";
+    html += '</table>';
     return html;
   }
 
+  // ---- CSV ----
   function buildCSV(data, label) {
-    let csv = "Dia,Temperatura Promedio (C),Humedad Promedio (%),Estado\n";
+    let csv = 'Day,Average Temperature (C),Average Humidity (%),Status\n';
     for (let i = 0; i < 7; i++) {
-      csv += days[i] + ",";
-      if (data.offline[i])        csv += "Fuera de servicio,Fuera de servicio,Fuera de servicio";
-      else if (data.count[i] > 0) csv += (data.temp[i]/data.count[i]).toFixed(1) + "," + (data.hum[i]/data.count[i]).toFixed(1) + ",OK";
-      else                        csv += "-,-,Sin datos";
-      csv += "\n";
+      csv += days[i] + ',';
+      if (data.offline[i])        csv += 'Out of service,Out of service,Out of service';
+      else if (data.count[i] > 0) csv += (data.temp[i]/data.count[i]).toFixed(1) + ',' + (data.hum[i]/data.count[i]).toFixed(1) + ',OK';
+      else                        csv += '-,-,No data';
+      csv += '\n';
     }
-    const blob = new Blob([csv], {type: 'text/csv'});
+    const blob = new Blob([csv], {type:'text/csv'});
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href     = url;
-    a.download = "semana_" + label.replace(/\//g,'-') + ".csv";
-    a.click();
+    a.href = url; a.download = 'semana_' + label.replace(/\//g,'-') + '.csv'; a.click();
   }
 
-  function updateCharts(hoursLabels, hoursTemp, hoursHum, daysTemp, daysHum) {
-    const chartOptions = () => ({
-      responsive: true,
-      plugins: { legend: { labels: { color: 'white' } } },
-      scales: {
-        x: { ticks: { color: 'white' }, grid: { color: '#334155' } },
-        y: { ticks: { color: 'white' }, grid: { color: '#334155' } }
-      }
-    });
+  function downloadCSV(idx) {
+    if (window._weekHistory && window._weekHistory[idx])
+      buildCSV(window._weekHistory[idx], window._weekHistory[idx].label);
+  }
 
+  // ---- CHART OPTIONS ----
+  function chartOpts(color) {
+    return {
+      responsive: true,
+      plugins: { legend: { labels: { color: 'rgba(255,255,255,0.7)', font: { family: 'Exo 2' } } } },
+      scales: {
+        x: { ticks: { color: 'rgba(255,255,255,0.6)', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+        y: { ticks: { color: 'rgba(255,255,255,0.6)', font: { size: 11 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+      }
+    };
+  }
+
+  // ---- UPDATE CHARTS ----
+  function updateCharts(hoursLabels, hoursTemp, hoursHum, daysTemp, daysHum) {
     if (chartTempHora) chartTempHora.destroy();
     chartTempHora = new Chart(document.getElementById('chartTempHora'), {
       type: 'line',
-      data: { labels: hoursLabels, datasets: [{ label: 'Temperatura C', data: hoursTemp,
-        borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.2)',
-        tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#f87171' }] },
-      options: chartOptions()
+      data: { labels: hoursLabels, datasets: [{ label: 'Temp °C', data: hoursTemp,
+        borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.15)',
+        tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#f87171',
+        pointBorderColor: '#fff', pointBorderWidth: 2 }] },
+      options: chartOpts('#f87171')
     });
 
     if (chartHumHora) chartHumHora.destroy();
     chartHumHora = new Chart(document.getElementById('chartHumHora'), {
       type: 'line',
-      data: { labels: hoursLabels, datasets: [{ label: 'Humedad %', data: hoursHum,
-        borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.2)',
-        tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#38bdf8' }] },
-      options: chartOptions()
+      data: { labels: hoursLabels, datasets: [{ label: 'Hum %', data: hoursHum,
+        borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.15)',
+        tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#38bdf8',
+        pointBorderColor: '#fff', pointBorderWidth: 2 }] },
+      options: chartOpts('#38bdf8')
     });
 
     if (chartTempDia) chartTempDia.destroy();
     chartTempDia = new Chart(document.getElementById('chartTempDia'), {
       type: 'bar',
-      data: { labels: days, datasets: [{ label: 'Temperatura C', data: daysTemp,
-        backgroundColor: 'rgba(248,113,113,0.7)', borderColor: '#f87171', borderWidth: 2 }] },
-      options: chartOptions()
+      data: { labels: days, datasets: [{ label: 'Temp °C', data: daysTemp,
+        backgroundColor: 'rgba(248,113,113,0.6)', borderColor: '#f87171',
+        borderWidth: 2, borderRadius: 6 }] },
+      options: chartOpts('#f87171')
     });
 
     if (chartHumDia) chartHumDia.destroy();
     chartHumDia = new Chart(document.getElementById('chartHumDia'), {
       type: 'bar',
-      data: { labels: days, datasets: [{ label: 'Humedad %', data: daysHum,
-        backgroundColor: 'rgba(56,189,248,0.7)', borderColor: '#38bdf8', borderWidth: 2 }] },
-      options: chartOptions()
+      data: { labels: days, datasets: [{ label: 'Hum %', data: daysHum,
+        backgroundColor: 'rgba(56,189,248,0.6)', borderColor: '#38bdf8',
+        borderWidth: 2, borderRadius: 6 }] },
+      options: chartOpts('#38bdf8')
     });
   }
 
+  // ---- LOAD DATA ----
   async function loadData() {
     try {
       const res  = await fetch(DATA_URL + '?t=' + Date.now());
       const data = await res.json();
 
-      // Temperatura y humedad
-      document.getElementById('temp').innerText        = data.temp + " C";
-      document.getElementById('hum').innerText         = data.hum  + " %";
-      document.getElementById('last-update').innerText = "Actualizado: " + data.lastUpdate;
+      document.getElementById('temp').innerText        = data.temp + '°C';
+      document.getElementById('hum').innerText         = data.hum  + '%';
+      document.getElementById('last-update').innerText = data.lastUpdate;
 
-      // Alerta de temperatura
       checkAlertBanner(data);
 
-      // Estado en linea / fuera de linea
-      const diffSec = Math.abs((Date.now() / 1000) - data.epochLastSeen);
-      const statusEl = document.getElementById('status');
+      const diffSec  = Math.abs((Date.now()/1000) - data.epochLastSeen);
+      const badge    = document.getElementById('status-badge');
+      const statusTx = document.getElementById('status-text');
       if (diffSec < 120) {
-        statusEl.innerText = "🟢 En linea";
-        statusEl.className = 'status-ok';
+        badge.className   = 'status-badge status-online';
+        statusTx.innerText = 'Online';
       } else {
-        statusEl.innerText = "🔴 Fuera de linea";
-        statusEl.className = 'status-off';
+        badge.className   = 'status-badge status-offline';
+        statusTx.innerText = 'Offline';
       }
 
-      // Graficas por hora
       const hoursLabels = data.hourHistory.map(h => h.time);
       const hoursTemp   = data.hourHistory.map(h => h.temp);
       const hoursHum    = data.hourHistory.map(h => h.hum);
-
-      // Graficas por dia
-      const daysTemp = data.currentWeek.count.map((c, i) => c > 0 ? (data.currentWeek.temp[i] / c) : null);
-      const daysHum  = data.currentWeek.count.map((c, i) => c > 0 ? (data.currentWeek.hum[i]  / c) : null);
+      const daysTemp    = data.currentWeek.count.map((c,i) => c > 0 ? (data.currentWeek.temp[i]/c) : null);
+      const daysHum     = data.currentWeek.count.map((c,i) => c > 0 ? (data.currentWeek.hum[i]/c)  : null);
 
       updateCharts(hoursLabels, hoursTemp, hoursHum, daysTemp, daysHum);
 
-      // Tabla horas
-      let hourHtml = "";
+      let hourHtml = '';
       if (data.hourHistory.length > 0) {
-        hourHtml = "<table><tr><th>Hora</th><th>Temp C</th><th>Hum %</th></tr>";
-        for (let i = data.hourHistory.length - 1; i >= 0; i--) {
-          hourHtml += "<tr><td>" + data.hourHistory[i].time + "</td>";
-          hourHtml += "<td>" + data.hourHistory[i].temp.toFixed(1) + "</td>";
-          hourHtml += "<td>" + data.hourHistory[i].hum.toFixed(1)  + "</td></tr>";
+        hourHtml = '<table><tr><th>Hour</th><th>Temp °C</th><th>Hum %</th></tr>';
+        for (let i = data.hourHistory.length-1; i >= 0; i--) {
+          hourHtml += '<tr><td>' + data.hourHistory[i].time + '</td>';
+          hourHtml += '<td>' + data.hourHistory[i].temp.toFixed(1) + '</td>';
+          hourHtml += '<td>' + data.hourHistory[i].hum.toFixed(1)  + '</td></tr>';
         }
-        hourHtml += "</table>";
+        hourHtml += '</table>';
       } else {
-        hourHtml = "<p>Calculandose...</p>";
+        hourHtml = '<p style="opacity:0.5;font-size:13px;">Calculating...</p>';
       }
       document.getElementById('hour-table').innerHTML = hourHtml;
 
-      // Semana actual
-      document.getElementById('week-title').innerText = "Semana actual (" + data.weekLabel + ")";
+      document.getElementById('week-title').innerText = 'Week of ' + data.weekLabel;
       document.getElementById('week-table').innerHTML = buildWeekTable(data.currentWeek);
       document.getElementById('csv-btn').onclick = () => buildCSV(data.currentWeek, data.weekLabel);
 
-      // Semanas anteriores
-      let histHtml = "";
+      let histHtml = '';
       if (data.weekHistory && data.weekHistory.length > 0) {
-        histHtml = "<h3>Semanas anteriores</h3>";
-        for (let w = data.weekHistory.length - 1; w >= 0; w--) {
+        histHtml = '<div class="section-title">🗂 Previous Weeks</div>';
+        for (let w = data.weekHistory.length-1; w >= 0; w--) {
           const rec = data.weekHistory[w];
-          histHtml += "<div class='week-section'><details>";
-          histHtml += "<summary>Semana del " + rec.label + "</summary>";
-          histHtml += buildWeekTable(rec);
-          histHtml += "<button class='btn' onclick='downloadCSV(" + w + ")'>Descargar CSV</button>";
-          histHtml += "</details></div>";
+          histHtml += '<div class="table-card"><details>';
+          histHtml += '<summary>📅 Week of ' + rec.label + '</summary>';
+          histHtml += '<div style="margin-top:14px">' + buildWeekTable(rec) + '</div>';
+          histHtml += '<button class="btn" onclick="downloadCSV(' + w + ')">⬇ Download CSV</button>';
+          histHtml += '</details></div>';
         }
       }
       document.getElementById('history-section').innerHTML = histHtml;
       window._weekHistory = data.weekHistory;
 
     } catch(e) {
-      console.log("Error cargando datos:", e);
-      document.getElementById('status').innerText = "🔴 Sin datos";
-      document.getElementById('status').className = 'status-off';
+      console.log('Error:', e);
+      document.getElementById('status-text').innerText = 'No data';
     }
   }
 
-  function downloadCSV(idx) {
-    if (window._weekHistory && window._weekHistory[idx]) {
-      buildCSV(window._weekHistory[idx], window._weekHistory[idx].label);
-    }
-  }
-
+  // ---- CLOCK ----
   function updateClock() {
     const now  = new Date();
-    const dias = ["Domingo","Lunes","Martes","Miercoles","Jueves","Viernes","Sabado"];
-    document.getElementById('clock').innerText = dias[now.getDay()] + " " + now.toLocaleDateString('es-MX') + " " + now.toLocaleTimeString('es-MX');
+    const dias = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    document.getElementById('clock').innerText =
+      dias[now.getDay()] + '  ' +
+      now.toLocaleDateString('en-US') + '  ' +
+      now.toLocaleTimeString('en-US');
   }
 
-  setInterval(updateClock, 1000);
-  setInterval(loadData,    30000);
+  // ---- INIT ----
+  createStars();
+  createParticles();
+  updateDayNight();
   updateClock();
   loadData();
-</script>
 
+  setInterval(updateClock,    1000);
+  setInterval(updateDayNight, 60000);
+  setInterval(loadData,       30000);
+</script>
 </body>
 </html>
