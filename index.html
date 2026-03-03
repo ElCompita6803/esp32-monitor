@@ -596,6 +596,20 @@
     </div>
 
     <div class="card">
+      <span class="card-icon">🔺</span>
+      <div class="card-label">Today Max</div>
+      <div class="card-value" id="tempMax" style="color:#f87171;text-shadow:0 0 20px rgba(248,113,113,0.6);">--.-°C</div>
+      <div style="font-size:14px;color:#38bdf8;margin-top:6px;" id="humMax">--.- %</div>
+    </div>
+
+    <div class="card">
+      <span class="card-icon">🔻</span>
+      <div class="card-label">Today Min</div>
+      <div class="card-value" id="tempMin" style="color:#38bdf8;">--.-°C</div>
+      <div style="font-size:14px;color:#93c5fd;margin-top:6px;" id="humMin">--.- %</div>
+    </div>
+
+    <div class="card">
       <span class="card-icon">📡</span>
       <div class="card-label">Last Update</div>
       <div class="card-sub" id="last-update" style="font-size:13px;margin-top:8px;opacity:0.8;">--</div>
@@ -859,12 +873,18 @@
       document.getElementById('hum').innerText         = data.hum  + '%';
       document.getElementById('last-update').innerText = data.lastUpdate;
 
+      // Max / Min
+      if (data.tempMax) document.getElementById('tempMax').innerText = '▲ ' + data.tempMax + '°C';
+      if (data.tempMin) document.getElementById('tempMin').innerText = '▼ ' + data.tempMin + '°C';
+      if (data.humMax)  document.getElementById('humMax').innerText  = '▲ ' + data.humMax  + ' %';
+      if (data.humMin)  document.getElementById('humMin').innerText  = '▼ ' + data.humMin  + ' %';
+
       checkAlertBanner(data);
 
       const diffSec  = Math.abs((Date.now()/1000) - data.epochLastSeen);
       const badge    = document.getElementById('status-badge');
       const statusTx = document.getElementById('status-text');
-      if (diffSec < 300) {
+      if (diffSec < 120) {
         badge.className   = 'status-badge status-online';
         statusTx.innerText = 'Online';
       } else {
