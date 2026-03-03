@@ -4,15 +4,17 @@
   <meta charset='utf-8'>
   <meta name='viewport' content='width=device-width, initial-scale=1'>
   <title>ESP32 DHT Monitor</title>
+  <script src='https://cdn.jsdelivr.net/npm/chart.js'></script>
   <style>
     body{font-family:Arial;text-align:center;background:#0f172a;color:white;padding:10px;}
     .card{background:#1e293b;padding:20px;margin:12px;border-radius:10px;display:inline-block;min-width:220px;}
     table{margin:auto;border-collapse:collapse;width:90%;max-width:500px;}
     td,th{border:1px solid #38bdf8;padding:6px 10px;}
     .week-section{background:#1e293b;margin:12px auto;padding:15px;border-radius:10px;max-width:560px;}
+    .chart-section{background:#1e293b;margin:12px auto;padding:15px;border-radius:10px;max-width:700px;}
     .btn{background:#38bdf8;color:#0f172a;border:none;padding:6px 14px;border-radius:6px;cursor:pointer;font-weight:bold;text-decoration:none;display:inline-block;margin-top:8px;}
     details summary{cursor:pointer;font-size:16px;padding:6px;}
-    .offline{color:#f87171;}
+    canvas{max-width:100%;margin-top:10px;}
     .status-ok{color:#4ade80;font-size:13px;}
     .status-off{color:#f87171;font-size:13px;}
   </style>
@@ -29,7 +31,7 @@
 <div class='card'>
   <h3>Temperatura actual</h3>
   <p id='temp' style='font-size:26px;'>--.- C</p>
-  <p id='temp-status' class='status-ok'>En linea</p>
+  <p id='status' class='status-ok'>Cargando...</p>
 </div>
 
 <div class='card'>
@@ -42,6 +44,26 @@
   <p id='last-update' style='font-size:14px;color:#94a3b8;'>--</p>
 </div>
 
+<div class='chart-section'>
+  <h3>Temperatura por hora (ultimas 6)</h3>
+  <canvas id='chartTempHora'></canvas>
+</div>
+
+<div class='chart-section'>
+  <h3>Humedad por hora (ultimas 6)</h3>
+  <canvas id='chartHumHora'></canvas>
+</div>
+
+<div class='chart-section'>
+  <h3>Temperatura por dia (semana actual)</h3>
+  <canvas id='chartTempDia'></canvas>
+</div>
+
+<div class='chart-section'>
+  <h3>Humedad por dia (semana actual)</h3>
+  <canvas id='chartHumDia'></canvas>
+</div>
+
 <div class='week-section'>
   <h3>Promedios por hora (ultimas 6)</h3>
   <div id='hour-table'><p>Cargando...</p></div>
@@ -50,6 +72,7 @@
 <div class='week-section'>
   <h3 id='week-title'>Semana actual</h3>
   <div id='week-table'><p>Cargando...</p></div>
+  <a class='btn' id='csv-btn' href='#'>Descargar CSV</a>
 </div>
 
 <div id='history-section'></div>
@@ -63,10 +86,14 @@
 
 <script>
   const DATA_URL = 'https://raw.githubusercontent.com/ElCompita6803/esp32-monitor/main/data.json';
+  const days = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
 
-  let lastData = null;
+  let chartTempHora = null;
+  let chartHumHora  = null;
+  let chartTempDia  = null;
+  let chartHumDia   = null;
 
-  function buildWeekTable(days, data) {
+  function buildWeekTable(data) {
     let html = "<table><tr><th>Dia</th><th>Temp C</th><th>Hum %</th></tr>";
     for (let i = 0; i < 7; i++) {
       html += "<tr><td>" + days[i] + "</td>";
@@ -84,32 +111,103 @@
     return html;
   }
 
+  function buildCSV(data, label) {
+    let csv = "Dia,Temperatura Promedio (C),Humedad Promedio (%),Estado\n";
+    for (let i = 0; i < 7; i++) {
+      csv += days[i] + ",";
+      if (data.offline[i])        csv += "Fuera de servicio,Fuera de servicio,Fuera de servicio";
+      else if (data.count[i] > 0) csv += (data.temp[i]/data.count[i]).toFixed(1) + "," + (data.hum[i]/data.count[i]).toFixed(1) + ",OK";
+      else                        csv += "-,-,Sin datos";
+      csv += "\n";
+    }
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = "semana_" + label.replace(/\//g,'-') + ".csv";
+    a.click();
+  }
+
+  function updateCharts(hoursLabels, hoursTemp, hoursHum, daysTemp, daysHum) {
+    const chartOptions = (color) => ({
+      responsive: true,
+      plugins: { legend: { labels: { color: 'white' } } },
+      scales: {
+        x: { ticks: { color: 'white' }, grid: { color: '#334155' } },
+        y: { ticks: { color: 'white' }, grid: { color: '#334155' } }
+      }
+    });
+
+    if (chartTempHora) chartTempHora.destroy();
+    chartTempHora = new Chart(document.getElementById('chartTempHora'), {
+      type: 'line',
+      data: { labels: hoursLabels, datasets: [{ label: 'Temperatura C', data: hoursTemp,
+        borderColor: '#f87171', backgroundColor: 'rgba(248,113,113,0.2)',
+        tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#f87171' }] },
+      options: chartOptions('#f87171')
+    });
+
+    if (chartHumHora) chartHumHora.destroy();
+    chartHumHora = new Chart(document.getElementById('chartHumHora'), {
+      type: 'line',
+      data: { labels: hoursLabels, datasets: [{ label: 'Humedad %', data: hoursHum,
+        borderColor: '#38bdf8', backgroundColor: 'rgba(56,189,248,0.2)',
+        tension: 0.4, fill: true, pointRadius: 5, pointBackgroundColor: '#38bdf8' }] },
+      options: chartOptions('#38bdf8')
+    });
+
+    if (chartTempDia) chartTempDia.destroy();
+    chartTempDia = new Chart(document.getElementById('chartTempDia'), {
+      type: 'bar',
+      data: { labels: days, datasets: [{ label: 'Temperatura C', data: daysTemp,
+        backgroundColor: 'rgba(248,113,113,0.7)', borderColor: '#f87171', borderWidth: 2 }] },
+      options: chartOptions('#f87171')
+    });
+
+    if (chartHumDia) chartHumDia.destroy();
+    chartHumDia = new Chart(document.getElementById('chartHumDia'), {
+      type: 'bar',
+      data: { labels: days, datasets: [{ label: 'Humedad %', data: daysHum,
+        backgroundColor: 'rgba(56,189,248,0.7)', borderColor: '#38bdf8', borderWidth: 2 }] },
+      options: chartOptions('#38bdf8')
+    });
+  }
+
   async function loadData() {
-    const days = ["Lunes","Martes","Miercoles","Jueves","Viernes","Sabado","Domingo"];
     try {
-      const res = await fetch(DATA_URL + '?t=' + Date.now());
+      const res  = await fetch(DATA_URL + '?t=' + Date.now());
       const data = await res.json();
-      lastData = data;
 
       // Temperatura y humedad
-      document.getElementById('temp').innerText = data.temp + " C";
-      document.getElementById('hum').innerText  = data.hum  + " %";
+      document.getElementById('temp').innerText        = data.temp + " C";
+      document.getElementById('hum').innerText         = data.hum  + " %";
       document.getElementById('last-update').innerText = "Actualizado: " + data.lastUpdate;
 
       // Estado en linea / fuera de linea
-      const diffSec = (Date.now() / 1000) - data.epochLastSeen;
-      const statusEl = document.getElementById('temp-status');
+      const diffSec  = (Date.now() / 1000) - data.epochLastSeen;
+      const statusEl = document.getElementById('status');
       if (diffSec < 120) {
-        statusEl.innerText = "🟢 En linea";
-        statusEl.className = 'status-ok';
+        statusEl.innerText   = "🟢 En linea";
+        statusEl.className   = 'status-ok';
       } else {
-        statusEl.innerText = "🔴 Fuera de linea";
-        statusEl.className = 'status-off';
+        statusEl.innerText   = "🔴 Fuera de linea";
+        statusEl.className   = 'status-off';
       }
 
-      // Promedios por hora
+      // Graficas por hora
+      const hoursLabels = data.hourHistory.map(h => h.time);
+      const hoursTemp   = data.hourHistory.map(h => h.temp);
+      const hoursHum    = data.hourHistory.map(h => h.hum);
+
+      // Graficas por dia
+      const daysTemp = data.currentWeek.count.map((c, i) => c > 0 ? (data.currentWeek.temp[i] / c) : null);
+      const daysHum  = data.currentWeek.count.map((c, i) => c > 0 ? (data.currentWeek.hum[i]  / c) : null);
+
+      updateCharts(hoursLabels, hoursTemp, hoursHum, daysTemp, daysHum);
+
+      // Tabla horas
       let hourHtml = "";
-      if (data.hourHistory && data.hourHistory.length > 0) {
+      if (data.hourHistory.length > 0) {
         hourHtml = "<table><tr><th>Hora</th><th>Temp C</th><th>Hum %</th></tr>";
         for (let i = data.hourHistory.length - 1; i >= 0; i--) {
           hourHtml += "<tr><td>" + data.hourHistory[i].time + "</td>";
@@ -124,7 +222,8 @@
 
       // Semana actual
       document.getElementById('week-title').innerText = "Semana actual (" + data.weekLabel + ")";
-      document.getElementById('week-table').innerHTML = buildWeekTable(days, data.currentWeek);
+      document.getElementById('week-table').innerHTML = buildWeekTable(data.currentWeek);
+      document.getElementById('csv-btn').onclick = () => buildCSV(data.currentWeek, data.weekLabel);
 
       // Semanas anteriores
       let histHtml = "";
@@ -134,29 +233,34 @@
           const rec = data.weekHistory[w];
           histHtml += "<div class='week-section'><details>";
           histHtml += "<summary>Semana del " + rec.label + "</summary>";
-          histHtml += buildWeekTable(days, rec);
+          histHtml += buildWeekTable(rec);
+          histHtml += "<button class='btn' onclick='downloadCSV(" + w + ")'>Descargar CSV</button>";
           histHtml += "</details></div>";
         }
       }
       document.getElementById('history-section').innerHTML = histHtml;
 
+      // Guardar historial para CSV
+      window._weekHistory = data.weekHistory;
+
     } catch(e) {
       console.log("Error cargando datos:", e);
-      if (!lastData) {
-        document.getElementById('temp-status').innerText = "🔴 Sin datos";
-        document.getElementById('temp-status').className = 'status-off';
-      }
+      document.getElementById('status').innerText = "🔴 Sin datos";
+      document.getElementById('status').className = 'status-off';
+    }
+  }
+
+  function downloadCSV(idx) {
+    if (window._weekHistory && window._weekHistory[idx]) {
+      buildCSV(window._weekHistory[idx], window._weekHistory[idx].label);
     }
   }
 
   // Reloj local
   function updateClock() {
-    const now = new Date();
-    const days = ["Domingo","Lunes","Martes","Miercoles","Jueves","Viernes","Sabado"];
-    const day = days[now.getDay()];
-    const date = now.toLocaleDateString('es-MX');
-    const time = now.toLocaleTimeString('es-MX');
-    document.getElementById('clock').innerText = day + " " + date + " " + time;
+    const now  = new Date();
+    const dias = ["Domingo","Lunes","Martes","Miercoles","Jueves","Viernes","Sabado"];
+    document.getElementById('clock').innerText = dias[now.getDay()] + " " + now.toLocaleDateString('es-MX') + " " + now.toLocaleTimeString('es-MX');
   }
 
   setInterval(updateClock, 1000);
