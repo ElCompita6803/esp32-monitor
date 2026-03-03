@@ -864,7 +864,7 @@
       const diffSec  = Math.abs((Date.now()/1000) - data.epochLastSeen);
       const badge    = document.getElementById('status-badge');
       const statusTx = document.getElementById('status-text');
-      if (diffSec < 120) {
+      if (diffSec < 300) {
         badge.className   = 'status-badge status-online';
         statusTx.innerText = 'Online';
       } else {
